@@ -19,7 +19,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 async function handleTranslation(data) {
-  const API_KEY = ''; // 用户需要在此处填入自己的 DeepL API Free 密钥
+  const API_KEY = 'e7f1bf82-507d-47e3-94be-cc5d85706dca:fx'; // 用户需要在此处填入自己的 DeepL API Free 密钥
   
   if (!API_KEY) {
     throw new Error('请先设置 DeepL API Free 密钥');

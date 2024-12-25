@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "DeepL Translator",
+  "name": "Translator script",
   "version": "1.0",
   "description": "A Chrome extension for translating text using DeepL API",
   "permissions": [
