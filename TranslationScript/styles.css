@@ -1,3 +1,4 @@
+/* Material Icons 字体声明 */
 @font-face {
   font-family: 'Material Symbols Rounded';
   font-style: normal;
@@ -6,22 +7,23 @@
   src: url('chrome-extension://__MSG_@@extension_id__/fonts/MaterialIcons-Regular.woff2') format('woff2');
 }
 
-.material-symbols-rounded {
-  font-family: 'Material Symbols Rounded';
+/* KaTeX 字体声明 */
+@font-face {
+  font-family: 'KaTeX_Main';
+  src: url('chrome-extension://__MSG_@@extension_id__/fonts/KaTeX_Main-Regular.woff2') format('woff2'),
+       url('chrome-extension://__MSG_@@extension_id__/fonts/KaTeX_Main-Regular.woff') format('woff'),
+       url('chrome-extension://__MSG_@@extension_id__/fonts/KaTeX_Main-Regular.ttf') format('truetype');
   font-weight: normal;
   font-style: normal;
-  font-size: 24px;
-  line-height: 1;
-  letter-spacing: normal;
-  text-transform: none;
-  display: inline-block;
-  white-space: nowrap;
-  word-wrap: normal;
-  direction: ltr;
-  -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
-  -moz-osx-font-smoothing: grayscale;
-  font-feature-settings: 'liga';
+}
+
+@font-face {
+  font-family: 'KaTeX_Math';
+  src: url('chrome-extension://__MSG_@@extension_id__/fonts/KaTeX_Math-Italic.woff2') format('woff2'),
+       url('chrome-extension://__MSG_@@extension_id__/fonts/KaTeX_Math-Italic.woff') format('woff'),
+       url('chrome-extension://__MSG_@@extension_id__/fonts/KaTeX_Math-Italic.ttf') format('truetype');
+  font-weight: normal;
+  font-style: italic;
 }
 
 /* 悬浮按钮样式 */
@@ -189,8 +191,135 @@
 /* 翻译内容样式 */
 .deepl-content {
   margin: 12px;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  overflow: hidden;
-  opacity: 1;
+  transition: height 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+              margin 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+              opacity 0.2s ease;
   line-height: 1.6;
+  will-change: height, margin, opacity;
+}
+
+/* KaTeX 样式 */
+.katex {
+  font: normal 1.21em KaTeX_Main, Times New Roman, serif;
+  line-height: 1.2;
+  white-space: normal;
+  text-indent: 0;
+  text-rendering: auto;
+  color: #059669;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 确保所有 KaTeX 元素都使用相同的颜色 */
+.katex .mord,
+.katex .mbin,
+.katex .mrel,
+.katex .mopen,
+.katex .mclose,
+.katex .mpunct,
+.katex .minner,
+.katex .mop,
+.katex .mathbb,
+.katex .mathit,
+.katex .mathrm {
+  color: #059669;
+}
+
+/* 改进下标和上标的显示 */
+.katex .msupsub {
+  text-align: left;
+}
+
+/* 改进分数的显示 */
+.katex .mfrac {
+  display: inline-block;
+  vertical-align: -0.5em;
+  padding: 0 0.1em;
+}
+
+.katex .mfrac > span {
+  display: block;
+  text-align: center;
+}
+
+/* 改进根号的显示 */
+.katex .sqrt {
+  display: inline-block;
+  padding: 0 0.1em;
+}
+
+.katex .sqrt > .root {
+  margin-left: 0.27777778em;
+  margin-right: -0.55555556em;
+}
+
+/* 改进运算符的显示 */
+.katex .mbin + .mord,
+.katex .mbin + .mop,
+.katex .mbin + .mopen,
+.katex .mbin + .minner {
+  margin-left: 0.16667em;
+}
+
+.katex .mrel + .mord,
+.katex .mrel + .mop,
+.katex .mrel + .mopen,
+.katex .mrel + .minner {
+  margin-left: 0.27778em;
+}
+
+/* 显示容器样式 */
+.deepl-display-container {
+  position: relative;
+  width: 100%;
+}
+
+.deepl-markdown-view,
+.deepl-code-view {
+  width: 100%;
+  transition: all 0.3s ease;
+}
+
+.deepl-code-view {
+  background: #f8f9fa;
+  border-radius: 4px;
+  margin: 0;
+}
+
+.deepl-code-view pre {
+  margin: 0;
+  padding: 16px;
+  overflow-x: auto;
+  background: transparent;
+}
+
+.deepl-code-view code {
+  font-family: 'Consolas', 'Monaco', 'Andale Mono', 'Ubuntu Mono', monospace;
+  font-size: 14px;
+  line-height: 1.5;
+  tab-size: 4;
+  white-space: pre-wrap;
+  word-break: break-all;
+  word-wrap: break-word;
+}
+
+/* Material Icons 样式 */
+.material-symbols-rounded {
+  font-family: 'Material Symbols Rounded';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: 'liga';
 } 

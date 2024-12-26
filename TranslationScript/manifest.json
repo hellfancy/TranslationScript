@@ -1,41 +1,43 @@
 {
   "manifest_version": 3,
-  "name": "Translator script",
-  "version": "1.0",
+  "name": "Hell の Translator",
+  "version": "1.1",
   "description": "A Chrome extension for translating text using DeepL API",
   "permissions": [
-    "activeTab",
-    "scripting",
     "storage",
-    "webRequest"
+    "activeTab",
+    "scripting"
   ],
   "host_permissions": [
-    "https://api-free.deepl.com/*",
-    "https://fonts.googleapis.com/*",
-    "https://fonts.gstatic.com/*"
+    "https://www2.deepl.com/*"
   ],
+  "action": {},
   "background": {
     "service_worker": "background.js"
   },
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "css": ["styles.css"],
-      "js": ["popup.js"]
+      "css": [
+        "styles.css",
+        "katex/katex.min.css"
+      ],
+      "js": [
+        "marked.min.js",
+        "katex/katex.min.js",
+        "katex/contrib/auto-render.min.js",
+        "popup.js"
+      ]
     }
   ],
-  "web_accessible_resources": [{
-    "resources": [
-      "fonts/*",
-      "*.css"
-    ],
-    "matches": ["<all_urls>"]
-  }, {
-    "resources": ["fonts/MaterialIcons-Regular.woff2"],
-    "matches": ["<all_urls>"]
-  }],
-  "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com"
-  },
-  "action": {}
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "images/*",
+        "fonts/*",
+        "katex/*"
+      ],
+      "matches": ["<all_urls>"]
+    }
+  ]
 } 

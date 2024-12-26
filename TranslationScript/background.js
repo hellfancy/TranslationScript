@@ -45,7 +45,9 @@ async function handleTranslation(data) {
     }
 
     const result = await response.json();
-    return {
+    
+    // 构造与 DeepL API 格式匹配的响应
+    const translationResponse = {
       jsonrpc: "2.0",
       id: data.id,
       result: {
@@ -58,6 +60,8 @@ async function handleTranslation(data) {
         lang: data.params.lang
       }
     };
+
+    return translationResponse;
   } catch (error) {
     console.error('Translation request failed:', error);
     throw error;
