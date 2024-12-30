@@ -79,6 +79,8 @@
   border-radius: 8px;
   position: relative;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 /* 工具栏样式 */
@@ -199,7 +201,7 @@
 }
 
 /* KaTeX 样式 */
-.katex {
+.deepl-translation .katex {
   font: normal 1.21em KaTeX_Main, Times New Roman, serif;
   line-height: 1.2;
   white-space: normal;
@@ -212,61 +214,61 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* 确保所有 KaTeX 元素都使用相同的颜色 */
-.katex .mord,
-.katex .mbin,
-.katex .mrel,
-.katex .mopen,
-.katex .mclose,
-.katex .mpunct,
-.katex .minner,
-.katex .mop,
-.katex .mathbb,
-.katex .mathit,
-.katex .mathrm {
+/* 确保所有 KaTeX 元素都使用相同的颜色，但仅限于翻译框内 */
+.deepl-translation .katex .mord,
+.deepl-translation .katex .mbin,
+.deepl-translation .katex .mrel,
+.deepl-translation .katex .mopen,
+.deepl-translation .katex .mclose,
+.deepl-translation .katex .mpunct,
+.deepl-translation .katex .minner,
+.deepl-translation .katex .mop,
+.deepl-translation .katex .mathbb,
+.deepl-translation .katex .mathit,
+.deepl-translation .katex .mathrm {
   color: #059669;
 }
 
 /* 改进下标和上标的显示 */
-.katex .msupsub {
+.deepl-translation .katex .msupsub {
   text-align: left;
 }
 
 /* 改进分数的显示 */
-.katex .mfrac {
+.deepl-translation .katex .mfrac {
   display: inline-block;
   vertical-align: -0.5em;
   padding: 0 0.1em;
 }
 
-.katex .mfrac > span {
+.deepl-translation .katex .mfrac > span {
   display: block;
   text-align: center;
 }
 
 /* 改进根号的显示 */
-.katex .sqrt {
+.deepl-translation .katex .sqrt {
   display: inline-block;
   padding: 0 0.1em;
 }
 
-.katex .sqrt > .root {
+.deepl-translation .katex .sqrt > .root {
   margin-left: 0.27777778em;
   margin-right: -0.55555556em;
 }
 
 /* 改进运算符的显示 */
-.katex .mbin + .mord,
-.katex .mbin + .mop,
-.katex .mbin + .mopen,
-.katex .mbin + .minner {
+.deepl-translation .katex .mbin + .mord,
+.deepl-translation .katex .mbin + .mop,
+.deepl-translation .katex .mbin + .mopen,
+.deepl-translation .katex .mbin + .minner {
   margin-left: 0.16667em;
 }
 
-.katex .mrel + .mord,
-.katex .mrel + .mop,
-.katex .mrel + .mopen,
-.katex .mrel + .minner {
+.deepl-translation .katex .mrel + .mord,
+.deepl-translation .katex .mrel + .mop,
+.deepl-translation .katex .mrel + .mopen,
+.deepl-translation .katex .mrel + .minner {
   margin-left: 0.27778em;
 }
 
@@ -280,6 +282,8 @@
 .deepl-code-view {
   width: 100%;
   transition: all 0.3s ease;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .deepl-code-view {
@@ -322,4 +326,49 @@
   text-rendering: optimizeLegibility;
   -moz-osx-font-smoothing: grayscale;
   font-feature-settings: 'liga';
+}
+
+/* 加载状态样式 */
+.deepl-loading {
+  padding: 20px;
+  text-align: center;
+  color: #059669;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.3px;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% { opacity: 0.6; }
+  50% { opacity: 1; }
+  100% { opacity: 0.6; }
+}
+
+/* 错误状态样式 */
+.deepl-error {
+  padding: 20px;
+  text-align: center;
+  color: #DC2626;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.3px;
+  background-color: #FEF2F2;
+  border-radius: 6px;
+  margin: 10px;
+  border: 1px solid rgba(220, 38, 38, 0.1);
+}
+
+/* 重试按钮特殊样式 */
+.deepl-button[title="重新翻译"] {
+  color: #DC2626;
+}
+
+.deepl-button[title="重新翻译"]:hover {
+  background-color: rgba(220, 38, 38, 0.08);
+  color: #DC2626;
+}
+
+.deepl-button[title="重新翻译"]:active {
+  background-color: rgba(220, 38, 38, 0.12);
 } 
