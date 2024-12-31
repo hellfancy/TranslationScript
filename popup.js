@@ -25,10 +25,46 @@ class TextBlockReplacer {
   replace(text, pattern) {
     if (!text) return text;
     
-    return text.replace(pattern, (match) => {
+    // 使用更完整的公式匹配规则
+    const latexPatterns = [
+      // 行间公式
+      '(?<display_1>\\$\\$(\\\\\\$|[^\\$])*?\\$\\$)',
+      '(?<display_2>\\\\\\[(\\\\\\]|[^\\]])*?\\\\\\])',
+      '(?<display_3>\\\\begin\\{[^}]+\\}[\\s\\S]*?\\\\end\\{[^}]+\\})',
+      // 行内公式
+      '(?<inline_1>\\$(\\\\\\$|[^\\$])*?\\$)',
+      '(?<inline_2>\\\\\\((\\\\\\)|[^)])*?\\\\\\))'
+    ].join('|');
+    
+    const regex = new RegExp(latexPatterns + '|' + pattern, 'g');
+    
+    return text.replace(regex, (match, ...args) => {
+      // 检查是否是 LaTeX 公式
+      const groups = args[args.length - 1];
+      if (groups.display_1 || groups.display_2 || groups.display_3 || 
+          groups.inline_1 || groups.inline_2) {
+        return match;
+      }
+      
+      // 处理公式前后的空格
+      const offset = args[args.length - 3];
+      let leftSpace = "", rightSpace = "";
+      
+      // 更智能的空格处理
+      const prevChar = text[offset - 1];
+      const nextChar = text[offset + match.length];
+      
+      // 如果前后不是空格，且不是特殊字符，添加空格
+      if (prevChar && !/[\s\(\[\{（【「『]/.test(prevChar)) {
+        leftSpace = " ";
+      }
+      if (nextChar && !/[\s\)\]\}）】」』\,\.\!\?\;\:\,\.\。\，\、\；\：\？\！]/.test(nextChar)) {
+        rightSpace = " ";
+      }
+      
       const blockId = this.blockCounter++;
       const placeholder = `{{BLOCK_${blockId}}}`;
-      this.blocks.set(placeholder, match);
+      this.blocks.set(placeholder, leftSpace + match + rightSpace);
       return placeholder;
     });
   }
@@ -90,26 +126,22 @@ class TranslationHelper {
     return { text, range };
   }
 
-  processMarkdownContent(text) {
-    // 保护所有LaTeX公式
-    const latexPatterns = [
-      /\${2}[^$]+\${2}/g,          // 行间公式 $$...$$
-      /\$[^$\n]+\$/g,              // 行内公式 $...$
-      /\\\([^)]+\\\)/g,            // 行内公式 \(...\)
-      /\\\[[^\]]+\\\]/g,           // 行间公式 \[...\]
-      /\\begin\{[^}]+\}[\s\S]*?\\end\{[^}]+\}/g  // 环境公式
-    ];
-
-    let processedText = text;
-    for (const pattern of latexPatterns) {
-      processedText = this.textBlockReplacer.replace(processedText, pattern);
-    }
-
-    return processedText;
-  }
-
+  // 处理各种类型的数学公式节点
   processMathNodes(container) {
     // 处理 MathML 节点
+    this.processMathMLNodes(container);
+    // 处理 MathJax 节点
+    this.processMathJaxNodes(container);
+    // 处理 KaTeX 节点
+    this.processKaTeXNodes(container);
+    // 处理行内和行间公式
+    this.processInlineFormulas(container);
+    // 清理无用节点
+    this.cleanupNodes(container);
+  }
+
+    // 处理 MathML 节点
+  processMathMLNodes(container) {
     const mathNodes = container.querySelectorAll('math');
     mathNodes.forEach(node => {
       // 优先获取原始的 LaTeX 内容
@@ -121,25 +153,26 @@ class TranslationHelper {
       
       // 如果没有原始 LaTeX，尝试获取 alttext
       const altText = node.getAttribute('alttext');
-      if (altText && !altText.includes('subscript') && !altText.includes('POSTSUBSCRIPT')) {
+      if (altText && this.isValidFormula(altText)) {
         node.replaceWith(document.createTextNode(this.protectLatex(altText)));
         return;
       }
 
       // 最后尝试从数学内容中提取
       const mathContent = node.textContent;
-      if (mathContent && !mathContent.includes('subscript') && !mathContent.includes('POSTSUBSCRIPT')) {
+      if (mathContent && this.isValidFormula(mathContent)) {
         node.replaceWith(document.createTextNode(this.protectLatex(mathContent)));
       }
     });
+  }
 
     // 处理 MathJax 节点
+  processMathJaxNodes(container) {
     const mathJaxNodes = container.querySelectorAll('.MathJax, .MathJax_Preview');
     mathJaxNodes.forEach(node => {
       // 检查是否已经处理过这个公式
       const mathId = node.getAttribute('id');
       if (mathId && container.querySelector(`script[id="${mathId}-Frame"]`)) {
-        // 如果存在对应的script标签，则移除当前节点
         node.remove();
         return;
       }
@@ -147,16 +180,7 @@ class TranslationHelper {
       // 优先获取原始的 TeX 内容
       const mathSource = node.querySelector('script[type="math/tex"]');
       if (mathSource) {
-        // 替换整个 MathJax 相关的节点组
-        const parent = node.parentElement;
-        if (parent) {
-          // 移除相关的预览节点
-          const preview = parent.querySelector('.MathJax_Preview');
-          if (preview) preview.remove();
-          // 移除相关的 script 节点
-          const script = parent.querySelector(`script[type="math/tex"]`);
-          if (script) script.remove();
-        }
+        this.cleanupMathJaxNodes(node);
         node.replaceWith(document.createTextNode(this.protectLatex(mathSource.textContent)));
         return;
       }
@@ -167,80 +191,108 @@ class TranslationHelper {
         node.replaceWith(document.createTextNode(this.protectLatex(annotation.textContent)));
       }
     });
+  }
 
     // 处理 KaTeX 节点
+  processKaTeXNodes(container) {
     const katexNodes = container.querySelectorAll('.katex');
     katexNodes.forEach(node => {
-      // 优先获取原始的 TeX 内容
       const texSource = node.querySelector('.katex-mathml annotation[encoding="application/x-tex"]');
       if (texSource) {
-        // 找到包含 KaTeX 的最外层容器（通常是 var 或 span）
-        let katexContainer = node;
-        while (katexContainer.parentElement && 
-              (katexContainer.parentElement.tagName.toLowerCase() === 'var' ||
-               katexContainer.parentElement.tagName.toLowerCase() === 'span')) {
-          katexContainer = katexContainer.parentElement;
-        }
-
-        // 获取原始的 TeX 内容
-        let texContent = texSource.textContent;
-
-        // 检查是否有相邻的 KaTeX 节点
-        const nextSibling = katexContainer.nextSibling;
-        const prevSibling = katexContainer.previousSibling;
-        
-        // 如果前一个节点也是 KaTeX，不处理（让它作为一个整体处理）
-        if (prevSibling && prevSibling.querySelector && prevSibling.querySelector('.katex')) {
-          return;
-        }
-
-        // 如果后面还有 KaTeX 节点，收集它们的内容
-        if (nextSibling && nextSibling.querySelector && nextSibling.querySelector('.katex')) {
-          let currentNode = katexContainer;
-          const fragments = [texContent];
-          
-          while (currentNode.nextSibling && 
-                 currentNode.nextSibling.querySelector && 
-                 currentNode.nextSibling.querySelector('.katex')) {
-            currentNode = currentNode.nextSibling;
-            const nextTexSource = currentNode.querySelector('.katex-mathml annotation[encoding="application/x-tex"]');
-            if (nextTexSource) {
-              fragments.push(nextTexSource.textContent);
-            }
-            // 标记这个节点待删除
-            currentNode.setAttribute('data-to-remove', 'true');
-          }
-          
-          // 合并所有片段
-          texContent = fragments.join('');
-        }
-
-        // 替换为处理后的内容
+        const katexContainer = this.findKaTeXContainer(node);
+        const texContent = this.collectAdjacentFormulas(katexContainer);
         katexContainer.replaceWith(document.createTextNode(this.protectLatex(texContent)));
-
-        // 删除已处理的相邻节点
-        container.querySelectorAll('[data-to-remove="true"]').forEach(node => node.remove());
-        return;
-      }
-
-      // 尝试从 tex-math 属性获取
-      const texMath = node.getAttribute('data-tex-math');
-      if (texMath) {
-        let katexContainer = node;
-        while (katexContainer.parentElement && 
-              (katexContainer.parentElement.tagName.toLowerCase() === 'var' ||
-               katexContainer.parentElement.tagName.toLowerCase() === 'span')) {
-          katexContainer = katexContainer.parentElement;
-        }
-        katexContainer.replaceWith(document.createTextNode(this.protectLatex(texMath)));
       }
     });
+  }
 
+  // 处理行内公式
+  processInlineFormulas(container) {
+    const html = container.innerHTML;
+    container.innerHTML = this.protectInlineLatex(html);
+  }
+
+  // 清理节点
+  cleanupNodes(container) {
     // 移除所有剩余的 script[type="math/tex"] 节点
-    const mathScripts = container.querySelectorAll('script[type="math/tex"]');
-    mathScripts.forEach(script => script.remove());
+    container.querySelectorAll('script[type="math/tex"]').forEach(script => script.remove());
+    
+    // 清理文本节点
+    this.cleanupTextNodes(container);
+  }
 
-    // 获取所有文本节点
+  // 清理 MathJax 相关节点
+  cleanupMathJaxNodes(node) {
+    const parent = node.parentElement;
+    if (parent) {
+      // 移除预览节点
+      const preview = parent.querySelector('.MathJax_Preview');
+      if (preview) preview.remove();
+      // 移除 script 节点
+      const script = parent.querySelector('script[type="math/tex"]');
+      if (script) script.remove();
+    }
+  }
+
+  // 查找 KaTeX 容器
+  findKaTeXContainer(node) {
+    let container = node;
+    while (container.parentElement && 
+           (container.parentElement.tagName.toLowerCase() === 'var' ||
+            container.parentElement.tagName.toLowerCase() === 'span')) {
+      container = container.parentElement;
+    }
+    return container;
+  }
+
+  // 收集相邻的公式
+  collectAdjacentFormulas(startNode) {
+    const formulas = [];
+    let currentNode = startNode;
+    
+    // 如果前一个节点是 KaTeX，不处理
+    if (this.hasPreviousKaTeX(currentNode)) {
+      return null;
+    }
+
+    // 收集当前和后续的 KaTeX 节点
+    while (currentNode && this.isKaTeXNode(currentNode)) {
+      const formula = this.extractFormula(currentNode);
+      if (formula) formulas.push(formula);
+      currentNode.setAttribute('data-to-remove', 'true');
+      currentNode = currentNode.nextSibling;
+    }
+    
+    return formulas.join(' ');
+  }
+
+  // 检查是否有前置的 KaTeX 节点
+  hasPreviousKaTeX(node) {
+    const prevSibling = node.previousSibling;
+    return prevSibling && prevSibling.querySelector && 
+           prevSibling.querySelector('.katex');
+  }
+
+  // 检查节点是否是 KaTeX 节点
+  isKaTeXNode(node) {
+    return node && node.querySelector && node.querySelector('.katex');
+  }
+
+  // 从节点中提取公式
+  extractFormula(node) {
+    const texSource = node.querySelector('.katex-mathml annotation[encoding="application/x-tex"]');
+    return texSource ? texSource.textContent : null;
+  }
+
+  // 检查是否是有效的公式
+  isValidFormula(text) {
+    return !text.includes('subscript') && 
+           !text.includes('POSTSUBSCRIPT') &&
+           !text.includes('POSTSUPERSCRIPT');
+  }
+
+  // 清理文本节点
+  cleanupTextNodes(container) {
     const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
     const textNodes = [];
     let node;
@@ -248,29 +300,24 @@ class TranslationHelper {
       textNodes.push(node);
     }
 
-    // 清理文本节点中的无用内容
     textNodes.forEach(node => {
-      if (node.textContent.includes('subscript') || 
-          node.textContent.includes('POSTSUBSCRIPT') ||
-          node.textContent.includes('POSTSUPERSCRIPT') ||
-          node.textContent.includes('start_') ||
-          node.textContent.includes('end_') ||
-          node.textContent.includes('bold_') ||
-          node.textContent.includes('italic_') ||
-          node.textContent.includes('blackboard_')) {
-        // 检查是否包含 LaTeX 代码
+      if (this.shouldCleanNode(node.textContent)) {
         const latexMatch = node.textContent.match(/\\[a-zA-Z]+\{.*?\}/);
-        if (latexMatch) {
-          node.textContent = latexMatch[0];
-        } else {
-          node.textContent = '';
-        }
+        node.textContent = latexMatch ? latexMatch[0] : '';
       }
     });
+  }
 
-    // 处理行内和行间公式
-    const html = container.innerHTML;
-    container.innerHTML = this.protectInlineLatex(html);
+  // 检查节点是否需要清理
+  shouldCleanNode(text) {
+    return text.includes('subscript') || 
+           text.includes('POSTSUBSCRIPT') ||
+           text.includes('POSTSUPERSCRIPT') ||
+           text.includes('start_') ||
+           text.includes('end_') ||
+           text.includes('bold_') ||
+           text.includes('italic_') ||
+           text.includes('blackboard_');
   }
 
   protectLatex(formula) {
@@ -280,9 +327,9 @@ class TranslationHelper {
   }
 
   protectInlineLatex(text) {
-    // 保护行间公式，确保公式两边有空格
+    // 保护行间公式
     text = this.textBlockReplacer.replace(text, /\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]/g);
-    // 保护行内公式，确保公式两边有空格
+    // 保护行内公式
     text = this.textBlockReplacer.replace(text, /\$[^$]+\$|\\\([\s\S]*?\\\)/g);
     return text;
   }
@@ -293,8 +340,8 @@ class TranslationHelper {
     }
 
     try {
-      // 格式化文本
-      const formattedText = this.formatText(text);
+      // 预处理文本
+      const processedText = this.preprocessText(text);
       
       // 发送翻译请求
       const response = await chrome.runtime.sendMessage({
@@ -304,11 +351,7 @@ class TranslationHelper {
           method: 'LMT_handle_texts',
           id: this.id,
           params: {
-            texts: [
-              {
-                text: formattedText
-              }
-            ],
+            texts: [{ text: processedText }],
             lang: {
               source_lang_user_selected: 'auto',
               target_lang: 'ZH'
@@ -321,9 +364,9 @@ class TranslationHelper {
         throw new Error(response.error || '翻译请求失败');
       }
 
-      // 恢复占位符
-      const translatedText = this.textBlockReplacer.restore(response.data.result.texts[0].text);
-      this.textBlockReplacer.clear();  // 清理占位符
+      // 后处理文本
+      const translatedText = this.postprocessText(response.data.result.texts[0].text);
+      this.textBlockReplacer.clear();
       
       return translatedText;
 
@@ -333,212 +376,638 @@ class TranslationHelper {
     }
   }
 
+  // 预处理文本
+  preprocessText(text) {
+    if (!text) return text;
+    
+    // 1. 保护所有公式
+    const patterns = [
+      // 行间公式
+      /\$\$([\s\S]*?)\$\$/g,
+      /\\\[([\s\S]*?)\\\]/g,
+      // 行内公式
+      /\$((?:\\.|[^$])*?)\$/g,
+      /\\\(((?:\\.|[^)])*?)\\\)/g
+    ];
+    
+    for (const pattern of patterns) {
+      text = this.textBlockReplacer.replace(text, pattern);
+    }
+    
+    // 2. 保护代码块
+    text = this.textBlockReplacer.replace(text, /```[\s\S]*?```/g);
+    
+    // 3. 处理特殊字符转义
+    const escapeRules = [
+      { pattern: /(?<!\\)>(?!\s)/g, replacement: " &gt; " },
+      { pattern: /(?<!\\)</g, replacement: " &lt; " },
+      { pattern: /(?<!\\)\*/g, replacement: " &#42; " },
+      { pattern: /(?<!\\)_/g, replacement: " &#95; " },
+      { pattern: /(?<!\\)\\\\(?=\s)/g, replacement: "\\\\\\\\" },
+      { pattern: /(?<!\\)\\(?![\\a-zA-Z0-9])/g, replacement: "\\\\" }
+    ];
+    
+    for (const rule of escapeRules) {
+      text = text.replace(rule.pattern, rule.replacement);
+    }
+    
+    // 4. 处理 Markdown 格式
+    if (this.isMarkdown(text)) {
+      text = this.processMarkdownFormatting(text);
+    }
+    
+    return text;
+  }
+
+  // 后处理文本
+  postprocessText(text) {
+    if (!text) return text;
+    
+    // 1. 修正格式
+    text = this.fixFormatting(text);
+    
+    // 2. 恢复所有占位符
+    text = this.textBlockReplacer.restore(text);
+    
+    // 3. 处理公式之间的空格
+    text = text
+      .replace(/】【/g, '】 【')
+      .replace(/\]\[/g, '] [')
+      .replace(/\}\{/g, '} {');
+    
+    return text;
+  }
+
+  // 修正格式
+  fixFormatting(text) {
+    // 修正公式与标点符号之间的空格
+    text = this.fixPunctuation(text);
+    // 修正中英文之间的空格
+    text = this.fixChineseEnglishSpacing(text);
+    // 清理多余的空格
+    text = this.cleanupSpaces(text);
+    return text;
+  }
+
+  // 修正标点符号
+  fixPunctuation(text) {
+    const rules = [
+      // 处理中文标点
+      { pattern: /(\$[^$]+\$)\s*([，。、；：？！）】」』}])/g, replacement: '$1$2' },
+      { pattern: /([（【「『{])\s*(\$[^$]+\$)/g, replacement: '$1$2' },
+      // 处理英文标点
+      { pattern: /(\$[^$]+\$)\s*([,.;:?!)\]}])/g, replacement: '$1$2' },
+      { pattern: /([([{])\s*(\$[^$]+\$)/g, replacement: '$1$2' }
+    ];
+
+    return rules.reduce((text, rule) => 
+      text.replace(rule.pattern, rule.replacement), text);
+  }
+
+  // 修正中英文之间的空格
+  fixChineseEnglishSpacing(text) {
+    return text
+      // 在中英文之间添加空格
+      .replace(/([\u4e00-\u9fa5])([\w])/g, '$1 $2')
+      .replace(/([\w])([\u4e00-\u9fa5])/g, '$1 $2')
+      // 修复误加的空格
+      .replace(/([，。、；：？！）】」』}])(\s+)/g, '$1')
+      .replace(/(\s+)([（【「『{])/g, '$2');
+  }
+
+  // 清理空格
+  cleanupSpaces(text) {
+    return text
+      .replace(/\s+/g, ' ')  // 合并多个空格
+      .replace(/^\s+|\s+$/g, '')  // 去除首尾空格
+      .replace(/\s+([，。、；：？！）】」』}])/g, '$1')  // 去除标点前的空格
+      .replace(/([（【「『{])\s+/g, '$1');  // 去除标点后的空格
+  }
+
   formatText(text) {
     // 处理 LaTeX 公式
     const protectedFormulas = new Map();
     let counter = 0;
 
-    // 处理所有 LaTeX 公式，使用更精确的正则表达式来匹配下标和上标
+    // 处理所有 LaTeX 公式
     text = text.replace(/\$([^$]+)\$/g, (match, formula) => {
-      // 先处理同时包含上下标的情况
-      let processedFormula = formula.replace(/([A-Za-z\d]+)([_^])([^{]|{[^}]*})\s*([_^])([^{]|{[^}]*})/g, (match, base, op1, sub1, op2, sub2) => {
-        // 确保子表达式都用大括号包裹
-        const fixedSub1 = sub1.startsWith('{') ? sub1 : `{${sub1}}`;
-        const fixedSub2 = sub2.startsWith('{') ? sub2 : `{${sub2}}`;
-        return `${base}${op1}${fixedSub1}${op2}${fixedSub2}`;
-      });
-
-      // 然后处理单独的上标或下标
-      processedFormula = processedFormula.replace(/([_^])([^{]|$)/g, '$1{$2}');
-      
-      // 检查并修复嵌套的大括号
-      let depth = 0;
-      let fixedFormula = '';
-      for (let char of processedFormula) {
-        if (char === '{') depth++;
-        else if (char === '}') depth--;
-        fixedFormula += char;
-      }
-      // 补充缺失的右大括号
-      while (depth > 0) {
-        fixedFormula += '}';
-        depth--;
-      }
+      // 处理上下标
+      let processedFormula = this.processSubscriptsAndSuperscripts(formula);
+      // 修复括号
+      processedFormula = this.fixBrackets(processedFormula);
 
       const placeholder = `__FORMULA_${counter}__`;
-      // 在公式中的下划线前添加反斜杠，防止被解析为 Markdown
-      const escapedFormula = `$${fixedFormula}$`.replace(/_/g, '\\_');
+      // 转义下划线
+      const escapedFormula = `$${processedFormula}$`.replace(/_/g, '\\_');
       protectedFormulas.set(placeholder, escapedFormula);
       counter++;
       return placeholder;
     });
 
-    // markdown修正
-    const mdRuleMap = [
-      { pattern: /(\s_[\u4e00-\u9fa5]+_)([\u4e00-\u9fa5]+)/g, replacement: "$1 $2" }, // 斜体
-      { pattern: /(_[\u4e00-\u9fa5]+_\s)([\u4e00-\u9fa5]+)/g, replacement: " $1$2" },
-      { pattern: /(_[\u4e00-\u9fa5]+_)([\u4e00-\u9fa5]+)/g, replacement: " $1 $2" },
-      { pattern: /（([\s\S]*?)）/g, replacement: "($1)" }, // 中文（）
-      { pattern: /\*\* (.*?) \*\*/g, replacement: "**$1**" } // 加粗
-    ];
-    mdRuleMap.forEach(({ pattern, replacement }) => {
-      text = text.replace(pattern, replacement);
-    });
+    // 处理 Markdown 格式
+    text = this.processMarkdownFormatting(text);
 
-    // 清理多余的空格，但保留公式占位符
-    text = text.replace(/\s+/g, ' ').trim();
-
-    // 恢复所有的 LaTeX 公式，并确保公式与标点符号之间有空格
+    // 恢复公式
     for (const [placeholder, formula] of protectedFormulas) {
-      // 在恢复公式时添加空格，同时处理标点符号
       text = text.replace(placeholder, ` ${formula} `);
     }
 
-    // 处理公式与标点符号之间的空格
-    // 处理中文标点
-    text = text.replace(/(\$[^$]+\$)\s*([，。、；：？！）】」』}])/g, '$1 $2');
-    text = text.replace(/([（【「『{])\s*(\$[^$]+\$)/g, '$1 $2');
-    // 处理英文标点
-    text = text.replace(/(\$[^$]+\$)\s*([,.;:?!)\]}])/g, '$1 $2');
-    text = text.replace(/([([{])\s*(\$[^$]+\$)/g, '$1 $2');
-
-    // 清理可能产生的多余空格
-    text = text.replace(/\s+/g, ' ').trim();
-
-    console.log('Formatted text:', text);
     return text;
   }
 
+  // 处理上下标
+  processSubscriptsAndSuperscripts(formula) {
+    // 处理同时包含上下标的情况
+    let processed = formula.replace(
+      /([A-Za-z\d]+)([_^])([^{]|{[^}]*})\s*([_^])([^{]|{[^}]*})/g,
+      (match, base, op1, sub1, op2, sub2) => {
+        const fixedSub1 = sub1.startsWith('{') ? sub1 : `{${sub1}}`;
+        const fixedSub2 = sub2.startsWith('{') ? sub2 : `{${sub2}}`;
+        return `${base}${op1}${fixedSub1}${op2}${fixedSub2}`;
+      }
+    );
+
+    // 处理单独的上标或下标
+    processed = processed.replace(/([_^])([^{]|$)/g, '$1{$2}');
+    
+    return processed;
+  }
+
+  // 修复括号
+  fixBrackets(text) {
+      let depth = 0;
+    let fixed = '';
+    for (const char of text) {
+        if (char === '{') depth++;
+        else if (char === '}') depth--;
+      fixed += char;
+      }
+    // 补充缺失的右括号
+      while (depth > 0) {
+      fixed += '}';
+        depth--;
+    }
+    return fixed;
+  }
+
+  // 处理 Markdown 格式
+  processMarkdownFormatting(text) {
+    const mdRules = [
+      // 处理中文下划线
+      { pattern: /(\s_[\u4e00-\u9fa5]+_)([\u4e00-\u9fa5]+)/g, replacement: "$1 $2" },
+      { pattern: /(_[\u4e00-\u9fa5]+_\s)([\u4e00-\u9fa5]+)/g, replacement: " $1$2" },
+      { pattern: /(_[\u4e00-\u9fa5]+_)([\u4e00-\u9fa5]+)/g, replacement: " $1 $2" },
+      // 处理中文括号
+      { pattern: /（([\s\S]*?)）/g, replacement: "($1)" },
+      // 处理粗体
+      { pattern: /\*\* (.*?) \*\*/g, replacement: "**$1**" },
+      // 处理斜体
+      { pattern: /\* (.*?) \*/g, replacement: "*$1*" },
+      // 处理行内代码
+      { pattern: /` (.*?) `/g, replacement: "`$1`" }
+    ];
+    
+    return mdRules.reduce((text, rule) => 
+      text.replace(rule.pattern, rule.replacement), text);
+  }
+
   createTranslationElement(translatedText, isLoading = false, error = null) {
-    const translationDiv = document.createElement('div');
-    translationDiv.className = 'deepl-translation';
+    const element = TranslationUI.createTranslationElement(translatedText, isLoading, error);
+    
+    if (!isLoading && !error) {
+      TranslationUI.setupEventHandlers(element, translatedText);
+    }
+    
+    return element;
+  }
+}
 
-    const toolbarDiv = document.createElement('div');
-    toolbarDiv.className = 'deepl-toolbar';
+class TranslationUI {
+  static initMarkdownIt() {
+    if (!this.md) {
+      // 使用更完整的 markdown-it 配置
+      this.md = markdownit({
+        html: true,
+        breaks: true,
+        typographer: true,
+        linkify: true,
+        quotes: ['""', '\'\''],
+        langPrefix: 'language-'
+      });
 
-    const toolTypeSpan = document.createElement('span');
-    toolTypeSpan.textContent = 'DeepL API Free';
-    toolTypeSpan.className = 'deepl-tool-type';
+      // 配置数学公式规则
+      const mathInline = (tokens, idx) => {
+        const content = tokens[idx].content;
+        return `<span class="math inline">$${content}$</span>`;
+      };
 
+      const mathBlock = (tokens, idx) => {
+        const content = tokens[idx].content;
+        return `<div class="math display">$$${content}$$</div>`;
+      };
+
+      // 配置表格渲染
+      this.md.renderer.rules.table_open = () => '<div class="table-wrapper"><table class="table">';
+      this.md.renderer.rules.table_close = () => '</table></div>';
+
+      // 配置数学公式渲染规则
+      this.md.use((md) => {
+        // 行内公式规则
+        md.inline.ruler.before('escape', 'math_inline', (state, silent) => {
+          const pos = state.pos;
+          const str = state.src;
+          
+          if (str.charCodeAt(pos) !== 0x24 /* $ */) return false;
+          
+          let end = pos + 1;
+          let found = false;
+          
+          while (end < str.length && str.charCodeAt(end) !== 0x24 /* $ */) {
+            if (str.charCodeAt(end) === 0x5C /* \ */) {
+              end += 2;
+              continue;
+            }
+            end++;
+          }
+          
+          if (end >= str.length) return false;
+          if (pos + 1 === end) return false;
+          
+          if (!silent) {
+            const token = state.push('math_inline', 'math', 0);
+            token.content = str.slice(pos + 1, end);
+            token.markup = '$';
+          }
+          
+          state.pos = end + 1;
+          return true;
+        });
+
+        // 行间公式规则
+        md.block.ruler.before('fence', 'math_block', (state, start, end, silent) => {
+          let pos = state.bMarks[start] + state.tShift[start];
+          let str = state.src;
+          
+          if (pos + 2 > str.length) return false;
+          if (str.slice(pos, pos + 2) !== '$$') return false;
+          
+          pos += 2;
+          let lineMax = str.length;
+          
+          // 查找结束标记
+          while (pos < lineMax) {
+            if (str.slice(pos, pos + 2) === '$$') {
+              if (!silent) {
+                let content = str.slice(state.bMarks[start] + 2, pos);
+                let token = state.push('math_block', 'math', 0);
+                token.block = true;
+                token.content = content;
+                token.markup = '$$';
+                token.map = [start, state.line];
+              }
+              state.line = start + 1;
+              return true;
+            }
+            pos++;
+          }
+          
+          return false;
+        });
+
+        md.renderer.rules.math_inline = mathInline;
+        md.renderer.rules.math_block = mathBlock;
+      });
+    }
+  }
+
+  static createMarkdownView(text) {
+    const view = document.createElement('div');
+    view.className = 'deepl-markdown-view';
+    
+    try {
+      // 初始化 markdown-it
+      this.initMarkdownIt();
+      
+      // 创建临时的 TextBlockReplacer 用于保护公式
+      const replacer = new TextBlockReplacer();
+      
+      // 1. 保护所有公式
+      const patterns = [
+        // 行间公式
+        /\$\$([\s\S]*?)\$\$/g,
+        /\\\[([\s\S]*?)\\\]/g,
+        // 行内公式
+        /\$((?:\\.|[^$])*?)\$/g,
+        /\\\(((?:\\.|[^)])*?)\\\)/g
+      ];
+      
+      let processedText = text;
+      for (const pattern of patterns) {
+        processedText = replacer.replace(processedText, pattern);
+      }
+      
+      // 2. 保护代码块
+      processedText = replacer.replace(processedText, /```[\s\S]*?```/g);
+      
+      // 3. 渲染 Markdown
+      let renderedText = this.md.render(processedText);
+      
+      // 4. 恢复公式和代码块
+      renderedText = replacer.restore(renderedText);
+      
+      view.innerHTML = renderedText;
+      
+      // 5. 渲染数学公式
+      if (typeof katex !== 'undefined' && typeof renderMathInElement !== 'undefined') {
+        renderMathInElement(view, {
+          delimiters: [
+            {left: "$$", right: "$$", display: true},
+            {left: "\\[", right: "\\]", display: true},
+            {left: "$", right: "$", display: false},
+            {left: "\\(", right: "\\)", display: false}
+          ],
+          throwOnError: false,
+          errorColor: '#cc0000',
+          strict: false,
+          trust: true,
+          macros: {
+            "\\eqref": "\\href{#1}{}",
+            "\\label": "\\href{#1}{}",
+            "\\require": "\\href{#1}{}"
+          }
+        });
+        
+        // 6. 渲染代码块中的公式
+        view.querySelectorAll('pre code').forEach((element) => {
+          const codeText = element.textContent;
+          const hasLatex = patterns.some(pattern => pattern.test(codeText));
+          if (hasLatex) {
+            renderMathInElement(element, {
+              delimiters: [
+                {left: "$$", right: "$$", display: true},
+                {left: "\\[", right: "\\]", display: true},
+                {left: "$", right: "$", display: false},
+                {left: "\\(", right: "\\)", display: false}
+              ],
+              throwOnError: false,
+              errorColor: '#cc0000',
+              strict: false,
+              trust: true
+            });
+          }
+        });
+      }
+      
+    } catch (error) {
+      console.error('Rendering error:', error);
+      view.textContent = text;
+    }
+    
+    return view;
+  }
+
+  static createTranslationElement(translatedText, isLoading = false, error = null) {
+    const element = document.createElement('div');
+    element.className = 'deepl-translation';
+
+    if (isLoading) {
+      element.appendChild(this.createLoadingView());
+    } else if (error) {
+      element.appendChild(this.createErrorView(error));
+    } else {
+      element.appendChild(this.createResultView(translatedText));
+    }
+
+    return element;
+  }
+
+  static createLoadingView() {
+    const container = document.createElement('div');
+    
+    // 添加工具栏
+    container.appendChild(this.createToolbar('DeepL API Free', ['close']));
+    
+    // 添加加载提示
+    const content = document.createElement('div');
+    content.className = 'deepl-content';
+    content.innerHTML = '<div class="deepl-loading">DeepL API Free 正在翻译...</div>';
+    container.appendChild(content);
+    
+    return container;
+  }
+
+  static createErrorView(error) {
+    const container = document.createElement('div');
+    
+    // 添加工具栏
+    container.appendChild(this.createToolbar('DeepL API Free', ['refresh', 'close']));
+    
+    // 添加错误信息
+    const content = document.createElement('div');
+    content.className = 'deepl-content';
+    content.innerHTML = `<div class="deepl-error">${error}</div>`;
+    container.appendChild(content);
+    
+    return container;
+  }
+
+  static createResultView(text) {
+    const container = document.createElement('div');
+    
+    // 添加工具栏
+    container.appendChild(this.createToolbar('DeepL API Free', [
+      'content_copy',
+      'code',
+      'expand_less',
+      'close',
+    ]));
+    
+    // 添加内容区
+    const content = document.createElement('div');
+    content.className = 'deepl-content';
+
+    // 创建显示容器
+    const displayContainer = document.createElement('div');
+    displayContainer.className = 'deepl-display-container';
+
+    // 创建Markdown渲染视图
+    const markdownView = this.createMarkdownView(text);
+    displayContainer.appendChild(markdownView);
+    
+    // 创建源码视图
+    const sourceView = this.createSourceView(text);
+    displayContainer.appendChild(sourceView);
+    
+    content.appendChild(displayContainer);
+    container.appendChild(content);
+    
+    return container;
+  }
+
+  static createToolbar(title, buttons) {
+    const toolbar = document.createElement('div');
+    toolbar.className = 'deepl-toolbar';
+    
+    // 添加标题
+    const titleSpan = document.createElement('span');
+    titleSpan.textContent = title;
+    titleSpan.className = 'deepl-tool-type';
+    toolbar.appendChild(titleSpan);
+    
+    // 添加按钮
     const toolsDiv = document.createElement('div');
     toolsDiv.className = 'deepl-tools';
 
-    // 创建工具栏按钮
-    const createButton = (icon, title) => {
+    buttons.forEach(icon => {
+      toolsDiv.appendChild(this.createButton(icon));
+    });
+    
+    toolbar.appendChild(toolsDiv);
+    return toolbar;
+  }
+
+  static createButton(icon) {
       const button = document.createElement('button');
       button.className = 'deepl-button';
+    
       const iconSpan = document.createElement('span');
       iconSpan.className = 'material-symbols-rounded';
       iconSpan.innerHTML = icon;
+    
       button.appendChild(iconSpan);
-      button.title = title;
+    button.title = this.getButtonTitle(icon);
+    
       return button;
+  }
+
+  static getButtonTitle(icon) {
+    const titles = {
+      'content_copy': '复制翻译内容',
+      'code': '查看 Markdown 格式',
+      'expand_less': '折叠/展开',
+      'close': '关闭',
+      'refresh': '重新翻译',
+      'visibility': '查看渲染结果'
     };
+    return titles[icon] || '';
+  }
 
-    const contentDiv = document.createElement('div');
-    contentDiv.className = 'deepl-content';
-
-    if (isLoading) {
-      // 显示加载状态
-      contentDiv.innerHTML = '<div class="deepl-loading">DeepL API Free 正在翻译...</div>';
-      toolsDiv.appendChild(createButton('close', '关闭'));
-    } else if (error) {
-      // 显示错误信息和重试按钮
-      contentDiv.innerHTML = `<div class="deepl-error">${error}</div>`;
-      const retryButton = createButton('refresh', '重新翻译');
-      const closeButton = createButton('close', '关闭');
+  static initTurndownService() {
+    if (!this.turndownService) {
+      this.turndownService = new TurndownService({ bulletListMarker: '-' });
       
-      retryButton.onclick = async () => {
-        try {
-          // 使用保存的文本重新翻译
-          if (this.lastSelectedText) {
-            // 创建新的翻译元素
-            const translationElement = this.createTranslationElement(null, true);
-            
-            // 检查原翻译框是否还存在于文档中
-            if (translationDiv.parentNode) {
-              // 如果存在，在原位置插入新元素并移除旧元素
-              translationDiv.parentNode.insertBefore(translationElement, translationDiv);
-              translationDiv.remove();
-            } else {
-              // 如果不存在，创建新的范围并插入
-              const selection = window.getSelection();
-              const range = document.createRange();
-              const lastNode = selection.focusNode || document.body;
-              range.setStartAfter(lastNode);
-              range.collapse(true);
-              range.insertNode(translationElement);
-            }
-
-            try {
-              // 执行翻译
-              const translatedText = await this.translate(this.lastSelectedText);
-              if (!translatedText) {
-                throw new Error('翻译结果为空');
-              }
-
-              const finalElement = this.createTranslationElement(translatedText);
-              translationElement.replaceWith(finalElement);
-            } catch (error) {
-              // 如果翻译失败，替换加载状态为错误状态
-              const errorElement = this.createTranslationElement(null, false, error.message || '翻译失败，请重试');
-              translationElement.replaceWith(errorElement);
-            }
-          } else {
-            showTooltip('无法获取之前选中的文本');
-          }
-        } catch (error) {
-          console.error('Retry translation failed:', error);
-          showTooltip(error.message || '重试失败，请稍后再试');
+      // 保留原始标签
+      this.turndownService.keep(['del']);
+      
+      // 移除不需要的元素
+      this.turndownService.addRule('removeByClass', {
+        filter: function (node) {
+          return node.classList.contains('html2md-panel') ||
+            node.classList.contains('div-btn-copy') ||
+            node.classList.contains('btn-copy') ||
+            node.classList.contains('overlay') ||
+            node.classList.contains('monaco-editor') ||
+            node.nodeName === 'SCRIPT';
+        },
+        replacement: function () {
+          return '';
         }
-      };
+      });
       
-      closeButton.onclick = () => translationDiv.remove();
+      // 处理行内公式
+      this.turndownService.addRule('inline-math', {
+        filter: function (node) {
+          return node.tagName.toLowerCase() === "span" && node.className === "katex";
+        },
+        replacement: function (content, node) {
+          const latex = node.querySelector('annotation[encoding="application/x-tex"]')?.textContent;
+          if (latex) {
+            return "$" + latex.replace(/</g, "&lt;").replace(/>/g, "&gt;") + "$";
+          }
+          return content;
+        }
+      });
       
-      toolsDiv.appendChild(retryButton);
-      toolsDiv.appendChild(closeButton);
-    } else {
-      // 显示翻译结果
-      const copyButton = createButton('content_copy', '复制翻译内容');
-      const viewMarkdownButton = createButton('code', '查看 Markdown 格式');
-      const toggleButton = createButton('expand_less', '折叠/展开');
-      const closeButton = createButton('close', '关闭');
+      // 处理行间公式
+      this.turndownService.addRule('block-math', {
+        filter: function (node) {
+          return node.tagName.toLowerCase() === "span" && node.className === "katex-display";
+        },
+        replacement: function (content, node) {
+          const latex = node.querySelector('annotation[encoding="application/x-tex"]')?.textContent;
+          if (latex) {
+            return "\n$$\n" + latex.replace(/</g, "&lt;").replace(/>/g, "&gt;") + "\n$$\n";
+          }
+          return content;
+        }
+      });
+      
+      // 处理代码块
+      this.turndownService.addRule('pre', {
+        filter: function (node) {
+          return node.tagName.toLowerCase() === "pre";
+        },
+        replacement: function (content, node) {
+          if (!node.classList.contains('source-code-for-copy') && !node.classList.contains('prettyprint')) {
+            return "```\n" + content + "```\n";
+          }
+          return "";
+        }
+      });
+      
+      // 处理表格
+      this.turndownService.addRule('bordertable', {
+        filter: 'table',
+        replacement: function (content, node) {
+          if (node.classList.contains('table')) {
+            const output = [];
+            let thead = '';
+            const trs = node.querySelectorAll('tr');
+            
+            if (trs.length > 0) {
+              const ths = trs[0].querySelectorAll('th, td');
+              if (ths.length > 0) {
+                thead = '| ' + Array.from(ths).map(th => 
+                  TranslationUI.turndownService.turndown(th.innerHTML.trim())
+                ).join(' | ') + ' |\n';
+                thead += '| ' + Array.from(ths).map(() => ' --- ').join('|') + ' |\n';
+              }
+            }
+            
+            Array.from(trs).forEach((row, i) => {
+              if (i > 0) {
+                const cells = row.querySelectorAll('td,th');
+                const trow = '| ' + Array.from(cells).map(cell => 
+                  TranslationUI.turndownService.turndown(cell.innerHTML.trim())
+                ).join(' | ') + ' |';
+                output.push(trow);
+              }
+            });
+            
+            return thead + output.join('\n');
+          }
+          return content;
+        }
+      });
+    }
+  }
 
-      // 创建显示容器
-      const displayContainer = document.createElement('div');
-      displayContainer.className = 'deepl-display-container';
-
-      // 创建 Markdown 渲染视图
-      const markdownView = document.createElement('div');
-      markdownView.className = 'deepl-markdown-view';
-
-      // 创建代码视图
-      const codeView = document.createElement('div');
-      codeView.className = 'deepl-code-view';
-      codeView.style.display = 'none';
-
-      try {
-        // 配置 marked 选项
-        marked.setOptions({
-          gfm: true,
-          breaks: true,
-          mangle: false,
-          headerIds: false,
-          sanitize: false
-        });
-
-        // 渲染 Markdown 内容
-        markdownView.innerHTML = marked.parse(translatedText);
-
-        // 创建代码预览
+  static createSourceView(text) {
+    const view = document.createElement('div');
+    view.className = 'deepl-code-view';
+    view.style.display = 'none';
+    
         const pre = document.createElement('pre');
         const code = document.createElement('code');
-        code.textContent = translatedText;
+    code.textContent = text;
         pre.appendChild(code);
-        codeView.appendChild(pre);
+    view.appendChild(pre);
+    
+    return view;
+  }
 
-        // 渲染数学公式
-        renderMathInElement(markdownView, {
+  static renderMathInElement(element) {
+    renderMathInElement(element, {
           delimiters: [
             {left: '$$', right: '$$', display: true},
             {left: '$', right: '$', display: false}
@@ -553,85 +1022,87 @@ class TranslationHelper {
             "\\require": "\\href{#1}{}"
           }
         });
+  }
 
-      } catch (e) {
-        console.error('Rendering error:', e);
-        markdownView.textContent = translatedText;
-      }
+  static setupEventHandlers(element, translatedText) {
+    const copyButton = element.querySelector('button[title="复制翻译内容"]');
+    const viewButton = element.querySelector('button[title="查看 Markdown 格式"]');
+    const toggleButton = element.querySelector('button[title="折叠/展开"]');
+    const closeButton = element.querySelector('button[title="关闭"]');
+    
+    if (copyButton) {
+      copyButton.onclick = () => this.handleCopy(copyButton, translatedText);
+    }
+    
+    if (viewButton) {
+      viewButton.onclick = () => this.handleViewToggle(element, viewButton);
+    }
+    
+    if (toggleButton) {
+      toggleButton.onclick = () => this.handleCollapse(element, toggleButton);
+    }
+    
+    if (closeButton) {
+      closeButton.onclick = () => element.remove();
+    }
+  }
 
-      displayContainer.appendChild(markdownView);
-      displayContainer.appendChild(codeView);
-      contentDiv.appendChild(displayContainer);
-
-      let isCollapsed = false;
-      let showingCode = false;
-
-      copyButton.onclick = () => {
-        navigator.clipboard.writeText(translatedText).then(() => {
-          const icon = copyButton.querySelector('.material-symbols-rounded');
+  static handleCopy(button, text) {
+    navigator.clipboard.writeText(text).then(() => {
+      const icon = button.querySelector('.material-symbols-rounded');
           icon.style.color = '#059669';
           setTimeout(() => {
             icon.style.color = '';
           }, 1000);
         });
-      };
+  }
 
-      viewMarkdownButton.onclick = () => {
-        showingCode = !showingCode;
-        if (showingCode) {
-          markdownView.style.display = 'none';
-          codeView.style.display = 'block';
-          viewMarkdownButton.querySelector('.material-symbols-rounded').innerHTML = 'visibility';
-          viewMarkdownButton.title = '查看渲染结果';
-        } else {
+  static handleViewToggle(element, button) {
+    const markdownView = element.querySelector('.deepl-markdown-view');
+    const codeView = element.querySelector('.deepl-code-view');
+    const icon = button.querySelector('.material-symbols-rounded');
+    
+    const isShowingCode = markdownView.style.display === 'none';
+    
+    if (isShowingCode) {
           markdownView.style.display = 'block';
           codeView.style.display = 'none';
-          viewMarkdownButton.querySelector('.material-symbols-rounded').innerHTML = 'code';
-          viewMarkdownButton.title = '查看 Markdown 代码';
-        }
-      };
+      icon.innerHTML = 'code';
+      button.title = '查看 Markdown 格式';
+    } else {
+      markdownView.style.display = 'none';
+      codeView.style.display = 'block';
+      icon.innerHTML = 'visibility';
+      button.title = '查看渲染结果';
+    }
+  }
 
-      toggleButton.onclick = () => {
-        isCollapsed = !isCollapsed;
-        if (isCollapsed) {
-          const height = contentDiv.scrollHeight;
-          contentDiv.style.height = height + 'px';
-          contentDiv.offsetHeight;
-          contentDiv.style.height = '0';
-          contentDiv.style.margin = '0';
-          contentDiv.style.opacity = '0';
-          toggleButton.classList.add('collapsed');
+  static handleCollapse(element, button) {
+    const content = element.querySelector('.deepl-content');
+    const isCollapsed = button.classList.contains('collapsed');
+    
+    if (!isCollapsed) {
+      const height = content.scrollHeight;
+      content.style.height = height + 'px';
+      content.offsetHeight; // 触发重排
+      content.style.height = '0';
+      content.style.margin = '0';
+      content.style.opacity = '0';
+      button.classList.add('collapsed');
         } else {
-          contentDiv.style.height = 'auto';
-          contentDiv.style.opacity = '0';
-          const height = contentDiv.scrollHeight;
-          contentDiv.style.height = '0';
-          contentDiv.offsetHeight;
-          contentDiv.style.height = height + 'px';
-          contentDiv.style.margin = '';
-          contentDiv.style.opacity = '1';
-          toggleButton.classList.remove('collapsed');
+      content.style.height = 'auto';
+      content.style.opacity = '0';
+      const height = content.scrollHeight;
+      content.style.height = '0';
+      content.offsetHeight; // 触发重排
+      content.style.height = height + 'px';
+      content.style.margin = '';
+      content.style.opacity = '1';
+      button.classList.remove('collapsed');
           setTimeout(() => {
-            contentDiv.style.height = 'auto';
+        content.style.height = 'auto';
           }, 300);
         }
-      };
-
-      closeButton.onclick = () => translationDiv.remove();
-
-      toolsDiv.appendChild(copyButton);
-      toolsDiv.appendChild(viewMarkdownButton);
-      toolsDiv.appendChild(toggleButton);
-      toolsDiv.appendChild(closeButton);
-    }
-
-    toolbarDiv.appendChild(toolTypeSpan);
-    toolbarDiv.appendChild(toolsDiv);
-
-    translationDiv.appendChild(toolbarDiv);
-    translationDiv.appendChild(contentDiv);
-
-    return translationDiv;
   }
 }
 
@@ -720,9 +1191,53 @@ function injectFloatingButton() {
       // 获取选中内容
       const selectedContent = translator.getSelectedContent();
       range = selectedContent.range;
+      const text = selectedContent.text.trim();
       
-      if (!selectedContent.text || !selectedContent.text.trim()) {
+      if (!text) {
         showTooltip('请先选择要翻译的文本');
+        return;
+      }
+
+      // 检查是否是 LaTeX 公式
+      const isLatexFormula = (text) => {
+        // 匹配行间公式
+        const blockFormulaPattern = /^\s*\$\$([\s\S]*?)\$\$\s*$/;
+        // 匹配行内公式
+        const inlineFormulaPattern = /^\s*\$((?:\\.|[^$])*?)\$\s*$/;
+        // 匹配其他格式的公式
+        const otherFormulaPattern = /^\s*(?:\\\[([\s\S]*?)\\\]|\\\(([\s\S]*?)\\\))\s*$/;
+        
+        return blockFormulaPattern.test(text) || 
+               inlineFormulaPattern.test(text) || 
+               otherFormulaPattern.test(text);
+      };
+
+      // 如果是 LaTeX 公式，直接显示
+      if (isLatexFormula(text)) {
+        // 清除选中的文本
+        window.getSelection().removeAllRanges();
+        
+        // 创建显示元素
+        translationElement = translator.createTranslationElement(text);
+        range.collapse(false);
+        range.insertNode(translationElement);
+        
+        // 渲染公式
+        const markdownView = translationElement.querySelector('.deepl-markdown-view');
+        if (markdownView && typeof katex !== 'undefined' && typeof renderMathInElement !== 'undefined') {
+          renderMathInElement(markdownView, {
+            delimiters: [
+              {left: "$$", right: "$$", display: true},
+              {left: "\\[", right: "\\]", display: true},
+              {left: "$", right: "$", display: false},
+              {left: "\\(", right: "\\)", display: false}
+            ],
+            throwOnError: false,
+            errorColor: '#cc0000',
+            strict: false,
+            trust: true
+          });
+        }
         return;
       }
 
@@ -732,7 +1247,7 @@ function injectFloatingButton() {
       range.insertNode(translationElement);
 
       // 执行翻译
-      const translatedText = await translator.translate(selectedContent.text);
+      const translatedText = await translator.translate(text);
       
       if (!translatedText) {
         throw new Error('翻译结果为空');

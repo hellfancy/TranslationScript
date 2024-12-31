@@ -75,7 +75,7 @@
   padding: 0;
   background-color: #F9F9FA;
   color: #059669;
-  border: 1px solid rgba(5, 150, 105, 0.1);
+  border: 1px solid rgba(5, 150, 105, 0.3);
   border-radius: 8px;
   position: relative;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
@@ -89,7 +89,7 @@
   justify-content: space-between;
   align-items: center;
   padding: 8px 12px;
-  border-bottom: 1px solid rgba(5, 150, 105, 0.1);
+  border-bottom: 1px solid rgba(5, 150, 105, 0.3);
   min-height: 20px;
   background: rgba(5, 150, 105, 0.02);
   border-radius: 8px 8px 0 0;
@@ -198,6 +198,7 @@
               opacity 0.2s ease;
   line-height: 1.6;
   will-change: height, margin, opacity;
+  color: #059669;
 }
 
 /* KaTeX 样式 */
@@ -371,4 +372,132 @@
 
 .deepl-button[title="重新翻译"]:active {
   background-color: rgba(220, 38, 38, 0.12);
+}
+
+.deepl-markdown-view {
+  padding: 10px;
+  line-height: 1.6;
+  font-size: 14px;
+  color: #059669;
+  overflow-x: auto;
+}
+
+.deepl-markdown-view h1,
+.deepl-markdown-view h2,
+.deepl-markdown-view h3,
+.deepl-markdown-view h4,
+.deepl-markdown-view h5,
+.deepl-markdown-view h6 {
+  margin-top: 24px;
+  margin-bottom: 16px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.deepl-markdown-view h1 { font-size: 2em; }
+.deepl-markdown-view h2 { font-size: 1.5em; }
+.deepl-markdown-view h3 { font-size: 1.25em; }
+.deepl-markdown-view h4 { font-size: 1em; }
+.deepl-markdown-view h5 { font-size: 0.875em; }
+.deepl-markdown-view h6 { font-size: 0.85em; }
+
+.deepl-markdown-view p {
+  margin-top: 0;
+  margin-bottom: 16px;
+}
+
+.deepl-markdown-view pre {
+  padding: 16px;
+  overflow: auto;
+  font-size: 85%;
+  line-height: 1.45;
+  background-color: #f6f8fa;
+  border-radius: 6px;
+  margin-bottom: 16px;
+}
+
+.deepl-markdown-view code {
+  padding: 0.2em 0.4em;
+  margin: 0;
+  font-size: 85%;
+  background-color: rgba(175, 184, 193, 0.2);
+  border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+}
+
+.deepl-markdown-view pre code {
+  padding: 0;
+  margin: 0;
+  font-size: 100%;
+  word-break: normal;
+  white-space: pre;
+  background: transparent;
+  border: 0;
+}
+
+.deepl-markdown-view blockquote {
+  padding: 0 1em;
+  color: #57606a;
+  border-left: 0.25em solid #d0d7de;
+  margin: 0 0 16px 0;
+}
+
+.deepl-markdown-view ul,
+.deepl-markdown-view ol {
+  padding-left: 2em;
+  margin-top: 0;
+  margin-bottom: 16px;
+}
+
+.deepl-markdown-view table {
+  display: block;
+  width: 100%;
+  overflow: auto;
+  margin-top: 0;
+  margin-bottom: 16px;
+  border-spacing: 0;
+  border-collapse: collapse;
+}
+
+.deepl-markdown-view table th,
+.deepl-markdown-view table td {
+  padding: 6px 13px;
+  border: 1px solid #d0d7de;
+}
+
+.deepl-markdown-view table tr {
+  background-color: #ffffff;
+  border-top: 1px solid #d0d7de;
+}
+
+.deepl-markdown-view table tr:nth-child(2n) {
+  background-color: #f6f8fa;
+}
+
+.deepl-markdown-view img {
+  max-width: 100%;
+  box-sizing: content-box;
+  background-color: #ffffff;
+}
+
+.deepl-markdown-view hr {
+  height: 0.25em;
+  padding: 0;
+  margin: 24px 0;
+  background-color: #d0d7de;
+  border: 0;
+}
+
+.deepl-markdown-view .math.inline {
+  display: inline-block;
+  margin: 0 0.25em;
+  color: #059669;
+}
+
+.deepl-markdown-view .math.display {
+  display: block;
+  margin: 1em 0;
+  text-align: center;
+  overflow-x: auto;
+  color: #059669;
 } 

@@ -19,15 +19,16 @@
     {
       "matches": ["<all_urls>"],
       "css": [
-        "styles.css",
-        "katex/katex.min.css"
+        "katex/katex.min.css",
+        "styles.css"
       ],
       "js": [
-        "marked.min.js",
+        "markdown-it.min.js",
         "katex/katex.min.js",
         "katex/contrib/auto-render.min.js",
         "popup.js"
-      ]
+      ],
+      "run_at": "document_end"
     }
   ],
   "web_accessible_resources": [
